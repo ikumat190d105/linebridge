@@ -1,0 +1,136 @@
+//Line
+var line_url = 'https://api.line.me/v2/bot/message/reply';
+var CHANNEL_ACCESS_TOKEN = '';
+var default_user_id = ''
+
+//matterbridge
+var url = 'http://';
+var matterbridge_api_message = '/api/message';
+var matterbridge_api_stream = '/api/stream';
+
+var matterbridge_sendmessage_url = url + matterbridge_api_message;
+
+function GetGateName(group_id){
+//グループIDからゲートウェイの設定
+  var gateway;
+
+  switch (group_id) {
+  //case "LINEのグループID":
+  //  gateway = "ゲートウェイ";
+  //  break;
+
+  case "":
+    gateway = "";
+    break;
+
+  default:
+    gateway = "no_such_gateway"
+    break;
+  }
+
+  return gateway;
+}
+
+
+function doGet() {
+
+}
+
+function SendBridgeMessage(message, user_name, gateway){
+//matterbridgeにメッセージを送信
+  var bridge_params = {
+    method: 'post',
+    contentType: 'application/json',
+    payload : JSON.stringify({
+      'text': message,
+      'username': user_name,
+      'gateway': gateway,
+    }) 
+  };
+
+  UrlFetchApp.fetch(matterbridge_sendmessage_url, bridge_params);
+}
+
+function LineSendMessage(reply_token, message){
+//lineにメッセージを送信
+  var line_param = {
+    'headers': {
+      'Content-Type': 'application/json; charset=UTF-8',
+      'Authorization': 'Bearer ' + CHANNEL_ACCESS_TOKEN,
+    },
+    'method': 'post',
+    'payload': JSON.stringify({
+      'replyToken': reply_token,
+      'messages': [{
+        'type': 'text',
+        'text': message,
+      }],
+    }),
+  }
+
+  UrlFetchApp.fetch(line_url, line_param);
+}
+
+function GetUserDisName(group_id, user_id){
+//メッセージを送信したユーザーのディスプレイネームを表示
+  var user_param_url = 'https://api.line.me/v2/bot/group/' +  group_id + '/member/' + user_id;
+
+  var user_param = UrlFetchApp.fetch(user_param_url, {"headers" : {"Authorization" : "Bearer " + CHANNEL_ACCESS_TOKEN}});
+
+  var dis_name = JSON.parse(user_param).displayName;
+
+  return dis_name;
+}
+
+function doPost(e) {
+  //json形式でデータを取得
+  var json = JSON.parse(e.postData.contents);
+  var reply_token= json.events[0].replyToken;
+
+  if (typeof reply_token === 'undefined') {
+    return;
+  }
+
+  //ユーザー情報の取得
+  var type = json.events[0].source.type;
+  var user_id = json.events[0].source.userId;
+  var group_id = json.events[0].source.groupId;
+  var user_message = json.events[0].message.text;
+
+  var gateway;
+
+  user_name = GetUserDisName(group_id, user_id);
+
+  //ゲートウェイの取得
+  if(type == "group"){
+    gateway = GetGateName(group_id);
+
+    if(gateway == "no_such_gateway"){
+      var user_message = "設定されていないゲートウェイへのメッセージです";
+      LineSendMessage(reply_token, user_message);
+      return;
+    }
+
+    if(user_message == 'groupID'){
+    //LINEグループに'groupID'とメッセージが送信されたらグループIDを返信する
+      LineSendMessage(reply_token, group_id);
+      return;
+    }
+  }
+  else{
+    user_message = "予想外の送信"
+    LineSendMessage(reply_token, user_message);
+    return;
+  }
+  
+  //matterbridgeへメッセージを送信
+  SendBridgeMessage(user_message, user_name, gateway);
+
+  return ContentService.createTextOutput(JSON.stringify({'content': 'post ok'})).setMimeType(ContentService.MimeType.JSON);
+}
+
+
+
+
+
+
